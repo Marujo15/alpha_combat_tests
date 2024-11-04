@@ -4,9 +4,6 @@ const randomNumber = Math.floor(Math.random() * 100)
 const player = {
     id: `player-${randomNumber}`,
     name: `Player ${randomNumber}`,
-    x: 100,
-    y: 100,
-    direction: 0
 }
 
 const ws = new WebSocket(wsUrl);
@@ -14,7 +11,8 @@ const ws = new WebSocket(wsUrl);
 console.log(player)
 
 class Tank {
-    constructor(x, y, color, angle) {
+    constructor(x, y, color, angle, playerId) {
+        this.playerId = playerId;
         this.x = x;
         this.y = y;
         this.width = 40; // Largura do tanque base
@@ -94,21 +92,13 @@ class Bullet {
     }
 }
 
-class TankGame {
-    constructor(ws, currentPlayer, screen) {
+class AlphaCombat {
+    constructor(ws, screen) {
         this.ws = ws
         this.commandQueue = [];
         this.fps = 60;
         this.frameInterval = 1000 / this.fps;
         this.room = null
-
-        this.currentPlayer = {
-            id: currentPlayer.id,
-            name: currentPlayer.name,
-            x: 0,
-            y: 0,
-            direction: 0 //radians
-        };
 
         this.gameState = {
             players: [],
@@ -130,10 +120,6 @@ class TankGame {
         this.startGameLoop();
     }
 
-    setRenderer(gameState) {
-
-    }
-
     setupWebSocket() {
         this.ws.onopen = () => {
             console.log('Connected to server');
@@ -144,29 +130,29 @@ class TankGame {
         };
 
         this.ws.onmessage = (event) => {
-            const response = JSON.parse(event.data);
-            if (!response) {
+            const data = JSON.parse(event.data);
+            if (!data) {
                 console.error('Invalid game state received:', event.data);
                 return;
             }
 
-            if (response.type === "gameState") {
-                this.updateGameState(response);
+            if (data.type === "gameState") {
+                this.updateGameState(data);
             }
 
-            if (response.type === "playerConnected") {
-                console.log(`${response.player.name} connected`);
+            if (data.type === "playerConnected") {
+                console.log(`${data.player.name} connected`);
             }
 
-            if (response.type === "playerDisconnected") {
-                console.log(`${response.player.name} disconnected`);
+            if (data.type === "playerDisconnected") {
+                console.log(`${data.player.name} disconnected`);
             }
 
-            if (response.type === "roomCreated") {
-                this.room = response.room.id
+            if (data.type === "roomCreated") {
+                this.room = data.room.id
             }
-            if (response.type === "validate") {
-                console.log(`${response.message}`)
+            if (data.type === "validate") {
+                console.log(`${data.message}`)
             }
         };
 
@@ -250,40 +236,40 @@ class TankGame {
             const command = this.commandQueue.shift();
 
             this.sendCommandToServer(command);
+            this.executeCommand(command);
         }
     }
 
-    // executeCommand(command) {
-    //     const MOVE_SPEED = 5;
+    executeCommand(command) {
+        const MOVE_SPEED = 5;
 
-    //     switch (command.type) {
-    //         case 'move':
-    //             switch (command.direction) {
-    //                 case 'left':
-    //                     this.player.x -= MOVE_SPEED;
-    //                     this.player.direction = 'left';
-    //                     break;
-    //                 case 'right':
-    //                     this.player.x += MOVE_SPEED;
-    //                     this.player.direction = 'right';
-    //                     break;
-    //                 case 'up':
-    //                     this.player.y -= MOVE_SPEED;
-    //                     this.player.direction = 'up';
-    //                     break;
-    //                 case 'down':
-    //                     this.player.y += MOVE_SPEED;
-    //                     this.player.direction = 'down';
-    //                     break;
-    //             }
-    //             break;
+        switch (command.type) {
+            case 'move':
+                switch (command.direction) {
+                    case 'left':
+                        this.player.x -= MOVE_SPEED;
+                        this.player.direction = 'left';
+                        break;
+                    case 'right':
+                        this.player.x += MOVE_SPEED;
+                        this.player.direction = 'right';
+                        break;
+                    case 'up':
+                        this.player.y -= MOVE_SPEED;
+                        this.player.direction = 'up';
+                        break;
+                    case 'down':
+                        this.player.y += MOVE_SPEED;
+                        this.player.direction = 'down';
+                        break;
+                }
+                break;
 
-    //         case 'shoot':
-    //             // Local bullet creation logic here
-    //             console.log('Bullet shot from:', command.x, command.y, 'in direction:', command.direction);
-    //             break;
-    //     }
-    // }
+            case 'shoot':
+                console.log('Bullet shot from:', command.x, command.y, 'in direction:', command.direction);
+                break;
+        }
+    }
 
     sendCommandToServer(command) {
         if (this.ws.readyState === WebSocket.OPEN) {
@@ -335,6 +321,6 @@ class TankGame {
 }
 
 // Usage example:
-const game = new TankGame(ws, player, screen);
+const game = new AlphaCombat(ws, player, screen);
 
 

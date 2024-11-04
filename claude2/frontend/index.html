@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Game</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: rgb(17, 24, 39);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .card {
+            background-color: rgb(31, 41, 55);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 56rem;
+        }
+
+        .status-container {
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .game-status {
+            color: white;
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .room-id {
+            color: rgb(156, 163, 175);
+            font-size: 0.875rem;
+        }
+
+        canvas {
+            background-color: black;
+            border-radius: 0.5rem;
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="status-container">
+            <div id="gameStatus" class="game-status">Conectando ao servidor...</div>
+            <div id="roomInfo" class="room-id"></div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+    <script src="game.js"></script>
+</body>
+
+</html>

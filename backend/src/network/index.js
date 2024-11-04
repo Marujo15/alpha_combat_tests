@@ -1,7 +1,7 @@
 import { onConnect } from "./game/onConection.js";
 import { onMessage } from "./game/onMessage.js";
 
-export function initWebSocket(wss, port) {
+export function initWebSocket(wss) {
     wss.on('connection', (ws) => {
         console.log('> Connection established');
         ws.on('open', (ws) => {
@@ -17,6 +17,6 @@ export function initWebSocket(wss, port) {
         });
     });
 
-    console.log('Servidor WebSocket rodando em ws://localhost:' + port);
+    console.log('Servidor WebSocket rodando em ws://localhost:3000');
 }
 
