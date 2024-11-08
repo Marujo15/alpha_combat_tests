@@ -69,9 +69,16 @@ const bulletSpeed = 10;
 let localPlayer = null;
 const players = new Map();
 const bullets = new Map();
+// adicionar walls
 const explosions = new Map();
 const updateQueue = [];
-const keyState = {};
+const keyState = {
+    "ArrowUp": false,
+    "ArrowDown": false,
+    "ArrowLeft": false,
+    "ArrowRight": false,
+    " ": false
+};
 
 let shootQueue = [];
 let globalTickNumber = 0;
@@ -83,24 +90,26 @@ const localBullets = new Map();
 
 
 class PredictedEntity {
-    constructor(id, x, y, vx = 0, vy = 0) {
+    constructor(id, x, y, speed = 5, angle = 0) {
         this.id = id;
-        this.x = x;
-        this.y = y;
-        this.vx = vx;
-        this.vy = vy;
+        this.x = Number(x);
+        this.y = Number(y);
+        this.speed = Number(speed);
+        this.angle = Number(angle); // rad
         this.moveHistory = [];
         this.sequenceNumber = 0;
+        this.speedX = this.speed * Number(Math.cos(this.angle));
+        this.speedY = this.speed * Number(Math.sin(this.angle));
     }
 
-    addMove(x, y, vx = this.vx, vy = this.vy) {
+    addMove(x, y, speed = this.speed, angle = this.angle) {
         this.sequenceNumber++;
         this.moveHistory.push({
             sequenceNumber: this.sequenceNumber,
             x,
             y,
-            vx,
-            vy,
+            speed,
+            angle,
         });
         return this.sequenceNumber;
     }
@@ -128,24 +137,26 @@ class PredictedEntity {
 }
 
 class InterpolatedEntity {
-    constructor(id, x, y) {
+    constructor(id, x, y, angle) {
         this.id = id;
         this.x = x;
         this.y = y;
+        this.angle = angle; // rad
         this.toX = x;
         this.toY = y;
+        this.toAngle = angle;;
     }
 
-    updateTarget(x, y) {
-        // this.x = this.toX;
-        // this.y = this.toY;
+    updateTarget(x, y, angle) {
         this.toX = x;
         this.toY = y;
+        this.toAngle = angle;
     }
 
     interpolate(t) {
         this.x = interpolate(this.x, this.toX, t);
         this.y = interpolate(this.y, this.toY, t);
+        this.angle = interpolate(this.angle, this.toAngle, t);
     }
 }
 
@@ -154,80 +165,114 @@ function interpolate(a, b, t) {
 }
 
 function movePlayer(player, direction) {
-    const speed = 5;
+    player.speedX = player.speed * Number(Math.cos(player.angle));
+    player.speedY = player.speed * Number(Math.sin(player.angle));
+
     switch (direction) {
         case "up":
-            player.y = Math.max(playerSize / 2, player.y - speed);
+            console.log('player', player)
+            console.log('direction', direction)
+            console.log('player.x', player.x)
+            console.log('player.speedX', player.speedX)
+            console.log('player.y', player.y)
+            console.log('player.speedY', player.speedY)
+            player.x += Number(player.speedX);
+            player.y += Number(player.speedY);
+            console.log('player', player)
+
             break;
         case "down":
-            player.y = Math.min(mapSize - playerSize / 2, player.y + speed);
+            player.x -= player.speedX;
+            player.y -= player.speedY;
             break;
         case "left":
-            player.x = Math.max(playerSize / 2, player.x - speed);
+            player.angle -= 0.03;
+            console.log(player)
+            player.speedX = player.speed * Math.cos(player.angle);
+            player.speedY = player.speed * Math.sin(player.angle);
             break;
         case "right":
-            player.x = Math.min(mapSize - playerSize / 2, player.x + speed);
+            player.angle += 0.03;
+            player.speedX = player.speed * Math.cos(player.angle);
+            player.speedY = player.speed * Math.sin(player.angle);
             break;
     }
+
+    player.x = Math.max(
+        playerSize,
+        Math.min(mapSize, player.x)
+    );
+
+    player.y = Math.max(
+        playerSize,
+        Math.min(mapSize, player.y)
+    );
 
     return player.addMove(player.x, player.y);
 }
 
-function createBullet(playerId, startX, startY, targetX, targetY) {
-    const dx = targetX - startX;
-    const dy = targetY - startY;
-    const magnitude = Math.sqrt(dx ** 2 + dy ** 2);
-
-    const vx = (dx / magnitude) * bulletSpeed;
-    const vy = (dy / magnitude) * bulletSpeed;
-
+function createBullet(playerId, startX, startY, angle = 0) {
     return new PredictedEntity(
         `${playerId}-${Date.now()}`,
         startX,
         startY,
-        vx,
-        vy
+        bulletSpeed,
+        angle,
     );
 }
 
 function moveBullet(bullet) {
-    bullet.x += bullet.vx;
-    bullet.y += bullet.vy;
+    bullet.x += bullet.speedX;
+    bullet.y += bullet.speedY;
 
     if (bullet.x <= bulletSize / 2 || bullet.x >= mapSize - bulletSize / 2) {
-        bullet.vx *= -1;
+        bullet.speedX *= -1;
     }
     if (bullet.y <= bulletSize / 2 || bullet.y >= mapSize - bulletSize / 2) {
-        bullet.vy *= -1;
+        bullet.speedY *= -1;
     }
 
     bullet.x = Math.max(
         bulletSize / 2,
         Math.min(mapSize - bulletSize / 2, bullet.x)
     );
+
     bullet.y = Math.max(
         bulletSize / 2,
         Math.min(mapSize - bulletSize / 2, bullet.y)
     );
 
-    return bullet.addMove(bullet.x, bullet.y, bullet.vx, bullet.vy);
+    return bullet.addMove(bullet.x, bullet.y);
 }
 
 function processInput() {
     if (isReconciling) return;
 
-    const directions = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+    const directions = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "];
     directions.forEach((key) => {
-        if (keyState[key]) {
-            const direction = key.toLowerCase().replace("arrow", "");
-            const sequenceNumber = movePlayer(localPlayer, direction);
-            ws.send(
-                JSON.stringify({
-                    action: "move",
-                    direction,
-                    sequenceNumber,
-                })
-            );
+        if (key !== " ") {
+            if (keyState[key]) {
+                const direction = key.toLowerCase().replace("arrow", "");
+                console.log('localPlayer', localPlayer)
+                console.log('direction', direction)
+                const sequenceNumber = movePlayer(localPlayer, direction);
+                ws.send(
+                    JSON.stringify({
+                        action: "move",
+                        direction,
+                        sequenceNumber,
+                    })
+                );
+            }
+        } else {
+            if (keyState[key]) {
+                const currentTime = Date.now();
+                if (currentTime - lastShotTime >= shotCooldown) {
+                    shootQueue.push({ angle: localPlayer.angle });
+                } else {
+                    console.log("Shot on cooldown. Please wait.");
+                }
+            }
         }
     });
 
@@ -237,16 +282,13 @@ function processInput() {
             localPlayer.id,
             localPlayer.x,
             localPlayer.y,
-            shootInput.targetX,
-            shootInput.targetY
         );
         localBullets.set(bullet.id, bullet);
         ws.send(
             JSON.stringify({
                 action: "shoot",
                 bulletId: bullet.id,
-                targetX: shootInput.targetX,
-                targetY: shootInput.targetY,
+                angle: shootInput.angle,
             })
         );
     }
@@ -255,48 +297,58 @@ function processInput() {
 function processUpdateQueue() {
     while (updateQueue.length > 0) {
         const update = updateQueue.shift();
-        if (update.type === "playerJoin") {
-            const isMe = localPlayer && localPlayer.id === update.id;
-            if (!isMe && !players.has(update.id)) {
-                players.set(
-                    update.id,
-                    new InterpolatedEntity(update.id, update.x, update.y)
-                );
-            }
-        } else if (update.type === "playerLeave") {
-            players.delete(update.id);
-        } else if (update.type === "playerUpdate") {
-            if (update.id === localPlayer.id) {
-                validateAndReconcile(localPlayer, update);
-            } else if (players.has(update.id)) {
-                players.get(update.id).updateTarget(update.x, update.y);
-            } else {
-                players.set(
-                    update.id,
-                    new InterpolatedEntity(update.id, update.x, update.y)
-                );
-            }
-        } else if (update.type === "bulletUpdate") {
-            const bulletId = update.id;
-            if (update.playerId === localPlayer.id) {
-                if (localBullets.has(bulletId)) {
-                    validateAndReconcile(localBullets.get(bulletId), update);
-                }
-            } else {
-                if (bullets.has(bulletId)) {
-                    bullets.get(bulletId).updateTarget(update.x, update.y);
-                } else {
-                    bullets.set(
-                        bulletId,
-                        new InterpolatedEntity(bulletId, update.x, update.y)
+        switch (update.type) {
+            case "playerJoin":
+                const isMe = localPlayer && localPlayer.id === update.id;
+                if (!isMe && !players.has(update.id)) {
+                    players.set(
+                        update.id,
+                        new InterpolatedEntity(update.id, update.x, update.y, update.angle)
                     );
                 }
-            }
-        } else if (update.type === "bulletRemove") {
-            bullets.delete(update.id);
-            localBullets.delete(update.id);
-        } else if (update.type === "explosion") {
-            createExplosion(update.x, update.y);
+                break
+            case "playerLeave":
+                players.delete(update.id);
+                break
+            case "playerUpdate":
+                if (update.id === localPlayer.id) {
+                    validateAndReconcile(localPlayer, update);
+                } else if (players.has(update.id)) {
+                    players.get(update.id).updateTarget(update.x, update.y, update.angle);
+                } else {
+                    players.set(
+                        update.id,
+                        new InterpolatedEntity(update.id, update.x, update.y, update.angle)
+                    );
+                }
+                break
+            case "bulletUpdate":
+                const bulletId = update.id;
+                if (update.playerId === localPlayer.id) {
+                    if (localBullets.has(bulletId)) {
+                        validateAndReconcile(localBullets.get(bulletId), update);
+                    }
+                } else {
+                    if (bullets.has(bulletId)) {
+                        bullets.get(bulletId).updateTarget(update.x, update.y, update.angle);
+                    } else {
+                        bullets.set(
+                            bulletId,
+                            new InterpolatedEntity(bulletId, update.x, update.y, update.angle)
+                        );
+                    }
+                }
+                break
+            case "bulletRemove":
+                bullets.delete(update.id);
+                localBullets.delete(update.id);
+                break
+            case "explosion":
+                createExplosion(update.x, update.y);
+                break
+            default:
+                console.error(`Unknown update type: ${update}`);
+                break;
         }
     }
 }
@@ -309,8 +361,9 @@ function validateAndReconcile(entity, serverUpdate) {
         if (
             localMove.x !== serverUpdate.x ||
             localMove.y !== serverUpdate.y ||
-            localMove.vx !== serverUpdate.vx ||
-            localMove.vy !== serverUpdate.vy
+            localMove.speedX !== serverUpdate.speedX ||
+            localMove.speedY !== serverUpdate.speedY ||
+            localMove.angle !== serverUpdate.angle
         ) {
             console.log(
                 "Starting reconciliation from sequence number:",
@@ -318,8 +371,9 @@ function validateAndReconcile(entity, serverUpdate) {
             );
             entity.x = serverUpdate.x;
             entity.y = serverUpdate.y;
-            entity.vx = serverUpdate.vx;
-            entity.vy = serverUpdate.vy;
+            entity.speedX = serverUpdate.speedX;
+            entity.speedY = serverUpdate.speedY;
+            entity.angle = serverUpdate.angle;
             isReconciling = true;
 
             const movesToReapply =
@@ -341,8 +395,8 @@ function validateAndReconcile(entity, serverUpdate) {
     } else {
         entity.x = serverUpdate.x;
         entity.y = serverUpdate.y;
-        entity.vx = serverUpdate.vx;
-        entity.vy = serverUpdate.vy;
+        entity.speedX = serverUpdate.speedX;
+        entity.speedY = serverUpdate.speedY;
         entity.keepUnacknowledgedMoves(serverSequenceNumber);
     }
 }
@@ -377,50 +431,53 @@ function checkBulletCollisions(bullet) {
 }
 
 function draw() {
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (localPlayer) {
         // Draw local player
+        ctx.save()
+
+        ctx.translate(
+            (localPlayer.x * (canvas.width / mapSize)) - ((playerSize * (canvas.width / mapSize)) / 2),
+            (localPlayer.y * (canvas.width / mapSize)) - ((playerSize * (canvas.width / mapSize)) / 2)
+        )
+
+        ctx.rotate(localPlayer.angle)
+
         ctx.fillStyle = "red";
         ctx.fillRect(
-            ((localPlayer.x - playerSize / 2) / mapSize) * canvas.width,
-            ((localPlayer.y - playerSize / 2) / mapSize) * canvas.height,
-            (playerSize / mapSize) * canvas.width,
-            (playerSize / mapSize) * canvas.height
+            -(playerSize * (canvas.width / mapSize)) / 2,
+            -(playerSize * (canvas.width / mapSize)) / 2,
+            playerSize * (canvas.width / mapSize),
+            playerSize * (canvas.width / mapSize),
         );
 
-        // Draw local bullets
-        localBullets.forEach((entity) => {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-            ctx.fillRect(
-                ((entity.x - bulletSize / 2) / mapSize) * canvas.width,
-                ((entity.y - bulletSize / 2) / mapSize) * canvas.height,
-                (bulletSize / mapSize) * canvas.width,
-                (bulletSize / mapSize) * canvas.height
-            );
-        });
+        ctx.restore()
     }
 
-    // Draw other players
-    players.forEach((player) => {
-        ctx.fillStyle = "blue";
-        ctx.fillRect(
-            ((player.x - playerSize / 2) / mapSize) * canvas.width,
-            ((player.y - playerSize / 2) / mapSize) * canvas.height,
-            (playerSize / mapSize) * canvas.width,
-            (playerSize / mapSize) * canvas.height
-        );
-    });
+    // ! // Draw other players
+    // players.forEach((player) => {
+    //     ctx.fillStyle = "blue";
+    //     ctx.fillRect(
+    //         ((player.x - playerSize / 2) / mapSize) * canvas.width,
+    //         ((player.y - playerSize / 2) / mapSize) * canvas.height,
+    //         (playerSize / mapSize) * canvas.width,
+    //         (playerSize / mapSize) * canvas.height
+    //     );
+    // });
 
     // Draw bullets
+    ctx.arc(
+        100, 100, 10, 0, Math.PI * 2
+        // ((bullet.x - bulletSize / 2) / mapSize) * canvas.width,
+        // ((bullet.y - bulletSize / 2) / mapSize) * canvas.height,
+        // (bulletSize / mapSize) * canvas.width,
+        // (bulletSize / mapSize) * canvas.height
+    );
+    ctx.fillStyle = 'black';
+    ctx.fill();
     bullets.forEach((bullet) => {
-        ctx.fillStyle = "black";
-        ctx.fillRect(
-            ((bullet.x - bulletSize / 2) / mapSize) * canvas.width,
-            ((bullet.y - bulletSize / 2) / mapSize) * canvas.height,
-            (bulletSize / mapSize) * canvas.width,
-            (bulletSize / mapSize) * canvas.height
-        );
     });
 
     // Draw explosions
@@ -495,20 +552,6 @@ window.addEventListener("keyup", (e) => {
     keyState[e.key] = false;
 });
 
-canvas.addEventListener("click", (e) => {
-    const currentTime = Date.now();
-    if (currentTime - lastShotTime >= shotCooldown) {
-        const rect = canvas.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / canvas.width) * mapSize;
-        const y = ((e.clientY - rect.top) / canvas.height) * mapSize;
-
-        shootQueue.push({ targetX: x, targetY: y });
-        lastShotTime = currentTime;
-    } else {
-        console.log("Shot on cooldown. Please wait.");
-    }
-});
-
 ws.onopen = () => {
     console.log("Connected to server");
 };
@@ -521,14 +564,21 @@ ws.onmessage = (message) => {
         localPlayer = new PredictedEntity(
             data.player.id,
             data.player.x,
-            data.player.y
+            data.player.y,
+            5,
+            data.player.angle,
         );
         players.clear();
         data.players.forEach((player) => {
             if (player.id !== localPlayer.id) {
                 players.set(
                     player.id,
-                    new InterpolatedEntity(player.id, player.x, player.y)
+                    new InterpolatedEntity(
+                        player.id,
+                        player.x,
+                        player.y,
+                        player.angle
+                    )
                 );
             }
         });
@@ -536,7 +586,12 @@ ws.onmessage = (message) => {
         data.bullets.forEach((bullet) => {
             bullets.set(
                 bullet.id,
-                new InterpolatedEntity(bullet.id, bullet.x, bullet.y)
+                new InterpolatedEntity(
+                    bullet.id,
+                    bullet.x,
+                    bullet.y,
+                    0,
+                )
             );
         });
         if (!gameLoopStarted) {
@@ -560,6 +615,14 @@ ws.onmessage = (message) => {
         const delta = Math.round(performance.now() - data.id);
         console.log(`ping: ${delta}ms`);
     }
+};
+
+ws.onclose = () => {
+    players.clear();
+    bullets.clear();
+    localBullets.clear();
+    explosions.clear();
+    gameLoopStarted = false;
 };
 
 setInterval(() => {
