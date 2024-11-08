@@ -85,16 +85,8 @@ function movePlayer(player, direction) {
 
     switch (direction) {
         case "up":
-            console.log('player', player)
-            console.log('direction', direction)
-            console.log('player.x', player.x)
-            console.log('player.speedX', player.speedX)
-            console.log('player.y', player.y)
-            console.log('player.speedY', player.speedY)
-            player.x += Number(player.speedX);
-            player.y += Number(player.speedY);
-            console.log('player', player)
-
+            player.x += player.speedX;
+            player.y += player.speedY;
             break;
         case "down":
             player.x -= player.speedX;
@@ -122,28 +114,33 @@ function movePlayer(player, direction) {
         playerSize,
         Math.min(mapSize, player.y)
     );
+
+    console.log('player', player)
+
 }
 
 function moveBullet(bullet) {
     bullet.x += bullet.speedX;
     bullet.y += bullet.speedY;
 
-    if (bullet.x <= bulletSize / 2 || bullet.x >= mapSize - bulletSize / 2) {
+    if (bullet.x <= bulletSize || bullet.x >= mapSize - bulletSize) {
         bullet.speedX *= -1;
     }
-    if (bullet.y <= bulletSize / 2 || bullet.y >= mapSize - bulletSize / 2) {
+    if (bullet.y <= bulletSize || bullet.y >= mapSize - bulletSize) {
         bullet.speedY *= -1;
     }
 
     bullet.x = Math.max(
-        bulletSize / 2,
-        Math.min(mapSize - bulletSize / 2, bullet.x)
+        bulletSize,
+        Math.min(mapSize - bulletSize, bullet.x)
     );
 
     bullet.y = Math.max(
-        bulletSize / 2,
-        Math.min(mapSize - bulletSize / 2, bullet.y)
+        bulletSize,
+        Math.min(mapSize - bulletSize, bullet.y)
     );
+
+    console.log('bullet', bullet)
 
     bullet.sequenceNumber++;
 }

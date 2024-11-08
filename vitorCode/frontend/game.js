@@ -62,13 +62,15 @@ const ws = new WebSocket('ws://localhost:3000');
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const playerSize = 50;
-const bulletSize = 10;
+const bulletSize = 5;
 const mapSize = 1000;
 const bulletSpeed = 10;
 
 let localPlayer = null;
 const players = new Map();
 const bullets = new Map();
+const localBullets = new Map();
+
 // adicionar walls
 const explosions = new Map();
 const updateQueue = [];
@@ -86,20 +88,19 @@ let isReconciling = false;
 
 let lastShotTime = 0;
 const shotCooldown = 1000; // 1 second cooldown
-const localBullets = new Map();
 
 
 class PredictedEntity {
     constructor(id, x, y, speed = 5, angle = 0) {
         this.id = id;
-        this.x = Number(x);
-        this.y = Number(y);
-        this.speed = Number(speed);
-        this.angle = Number(angle); // rad
+        this.x = x;
+        this.y = y;
+        this.speed = speed;
+        this.angle = angle; // rad
         this.moveHistory = [];
         this.sequenceNumber = 0;
-        this.speedX = this.speed * Number(Math.cos(this.angle));
-        this.speedY = this.speed * Number(Math.sin(this.angle));
+        this.speedX = this.speed * Math.cos(this.angle);
+        this.speedY = this.speed * Math.sin(this.angle);
     }
 
     addMove(x, y, speed = this.speed, angle = this.angle) {
@@ -165,21 +166,13 @@ function interpolate(a, b, t) {
 }
 
 function movePlayer(player, direction) {
-    player.speedX = player.speed * Number(Math.cos(player.angle));
-    player.speedY = player.speed * Number(Math.sin(player.angle));
+    player.speedX = player.speed * Math.cos(player.angle);
+    player.speedY = player.speed * Math.sin(player.angle);
 
     switch (direction) {
         case "up":
-            console.log('player', player)
-            console.log('direction', direction)
-            console.log('player.x', player.x)
-            console.log('player.speedX', player.speedX)
-            console.log('player.y', player.y)
-            console.log('player.speedY', player.speedY)
-            player.x += Number(player.speedX);
-            player.y += Number(player.speedY);
-            console.log('player', player)
-
+            player.x += player.speedX;
+            player.y += player.speedY;
             break;
         case "down":
             player.x -= player.speedX;
@@ -187,7 +180,6 @@ function movePlayer(player, direction) {
             break;
         case "left":
             player.angle -= 0.03;
-            console.log(player)
             player.speedX = player.speed * Math.cos(player.angle);
             player.speedY = player.speed * Math.sin(player.angle);
             break;
@@ -208,6 +200,8 @@ function movePlayer(player, direction) {
         Math.min(mapSize, player.y)
     );
 
+    console.log(player)
+
     return player.addMove(player.x, player.y);
 }
 
@@ -225,21 +219,21 @@ function moveBullet(bullet) {
     bullet.x += bullet.speedX;
     bullet.y += bullet.speedY;
 
-    if (bullet.x <= bulletSize / 2 || bullet.x >= mapSize - bulletSize / 2) {
+    if (bullet.x <= bulletSize || bullet.x >= mapSize - bulletSize) {
         bullet.speedX *= -1;
     }
-    if (bullet.y <= bulletSize / 2 || bullet.y >= mapSize - bulletSize / 2) {
+    if (bullet.y <= bulletSize || bullet.y >= mapSize - bulletSize) {
         bullet.speedY *= -1;
     }
 
     bullet.x = Math.max(
-        bulletSize / 2,
-        Math.min(mapSize - bulletSize / 2, bullet.x)
+        bulletSize,
+        Math.min(mapSize - bulletSize, bullet.x)
     );
 
     bullet.y = Math.max(
-        bulletSize / 2,
-        Math.min(mapSize - bulletSize / 2, bullet.y)
+        bulletSize,
+        Math.min(mapSize - bulletSize, bullet.y)
     );
 
     return bullet.addMove(bullet.x, bullet.y);
@@ -268,6 +262,7 @@ function processInput() {
             if (keyState[key]) {
                 const currentTime = Date.now();
                 if (currentTime - lastShotTime >= shotCooldown) {
+                    // lastShotTime = currentTime;
                     shootQueue.push({ angle: localPlayer.angle });
                 } else {
                     console.log("Shot on cooldown. Please wait.");
@@ -280,8 +275,9 @@ function processInput() {
         const shootInput = shootQueue.shift();
         const bullet = createBullet(
             localPlayer.id,
-            localPlayer.x,
-            localPlayer.y,
+            localPlayer.x - playerSize / 2,
+            localPlayer.y - playerSize / 2,
+            shootInput.angle,
         );
         localBullets.set(bullet.id, bullet);
         ws.send(
@@ -453,7 +449,22 @@ function draw() {
             playerSize * (canvas.width / mapSize),
         );
 
+
         ctx.restore()
+
+        // Draw local bullets
+        localBullets.forEach((entity) => {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            ctx.beginPath()
+            ctx.arc(
+                (entity.x * (canvas.width / mapSize)),
+                (entity.y * (canvas.width / mapSize)),
+                bulletSize * (canvas.width / mapSize),
+                0,
+                Math.PI * 2,
+            )
+            ctx.fill();
+        });
     }
 
     // ! // Draw other players
@@ -466,19 +477,6 @@ function draw() {
     //         (playerSize / mapSize) * canvas.height
     //     );
     // });
-
-    // Draw bullets
-    ctx.arc(
-        100, 100, 10, 0, Math.PI * 2
-        // ((bullet.x - bulletSize / 2) / mapSize) * canvas.width,
-        // ((bullet.y - bulletSize / 2) / mapSize) * canvas.height,
-        // (bulletSize / mapSize) * canvas.width,
-        // (bulletSize / mapSize) * canvas.height
-    );
-    ctx.fillStyle = 'black';
-    ctx.fill();
-    bullets.forEach((bullet) => {
-    });
 
     // Draw explosions
     explosions.forEach((explosion, key) => {
@@ -560,60 +558,65 @@ let lastServerUpdateTimestamp;
 
 ws.onmessage = (message) => {
     const data = JSON.parse(message.data);
-    if (data.type === "fullSnapshot") {
-        localPlayer = new PredictedEntity(
-            data.player.id,
-            data.player.x,
-            data.player.y,
-            5,
-            data.player.angle,
-        );
-        players.clear();
-        data.players.forEach((player) => {
-            if (player.id !== localPlayer.id) {
-                players.set(
-                    player.id,
-                    new InterpolatedEntity(
+
+    switch (data.type) {
+        case "fullSnapshot":
+            localPlayer = new PredictedEntity(
+                data.player.id,
+                data.player.x,
+                data.player.y,
+                5,
+                data.player.angle,
+            );
+            players.clear();
+            data.players.forEach((player) => {
+                if (player.id !== localPlayer.id) {
+                    players.set(
                         player.id,
-                        player.x,
-                        player.y,
-                        player.angle
+                        new InterpolatedEntity(
+                            player.id,
+                            player.x,
+                            player.y,
+                            player.angle
+                        )
+                    );
+                }
+            });
+            bullets.clear();
+            data.bullets.forEach((bullet) => {
+                bullets.set(
+                    bullet.id,
+                    new InterpolatedEntity(
+                        bullet.id,
+                        bullet.x,
+                        bullet.y,
+                        0,
                     )
                 );
+            });
+            if (!gameLoopStarted) {
+                gameLoopStarted = true;
+                runAtDefinedFPS(gameLoop, 60);
             }
-        });
-        bullets.clear();
-        data.bullets.forEach((bullet) => {
-            bullets.set(
-                bullet.id,
-                new InterpolatedEntity(
-                    bullet.id,
-                    bullet.x,
-                    bullet.y,
-                    0,
-                )
-            );
-        });
-        if (!gameLoopStarted) {
-            gameLoopStarted = true;
-            runAtDefinedFPS(gameLoop, 60);
-        }
-    } else if (data.type === "update") {
-        const now = performance.now();
+            break;
+        case "update":
+            const now = performance.now();
 
-        if (lastServerUpdateTimestamp) {
-            const delta = Math.round(now - lastServerUpdateTimestamp);
-            console.log(`last server update delta: ${delta}ms`);
-        }
+            if (lastServerUpdateTimestamp) {
+                const delta = Math.round(now - lastServerUpdateTimestamp);
+                console.log(`last server update delta: ${delta}ms`);
+            }
 
-        lastServerUpdateTimestamp = now;
+            lastServerUpdateTimestamp = now;
 
-        data.updates.forEach((update) => {
-            updateQueue.push(update);
-        });
-    } else if (data.type === "pong") {
-        const delta = Math.round(performance.now() - data.id);
-        console.log(`ping: ${delta}ms`);
+            data.updates.forEach((update) => {
+                updateQueue.push(update);
+            });
+            break;
+        case "pong":
+            const delta = Math.round(performance.now() - data.id);
+            console.log(`ping: ${delta}ms`);
+            break;
     }
 };
 
